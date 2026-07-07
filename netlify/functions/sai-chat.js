@@ -1,4 +1,4 @@
-// netlify/functions/sai-chat.js
+ // netlify/functions/sai-chat.js
 // -----------------------------------------------------------------------
 // Secure AI proxy for the SAI contract assistant.
 // The Groq API key NEVER touches the browser — it lives only in
@@ -12,15 +12,18 @@ const CONTRACT_CTX =
 'قواعد صارمة:\n' +
 '1. أجب دائماً بنفس لغة سؤال العميل تلقائياً.\n' +
 '2. إذا كان السؤال خارج نطاق خدمات ومنتجات وعقد SAI، اعتذر بلباقة وأخبره أنك مخصص فقط لمساعدته في كل ما يخص SAI.\n' +
-'3. إذا سُئلت عن شيء غير مذكور في المعلومات، اعتذر بأدب ووجّهه للتواصل مع فريق الدعم: +971 50 334 594 أو زيارة صالة عرض جميرا.\n' +
-'4. أجب بأسلوب ودي وواضح ومختصر مع الدقة الكاملة بالأرقام والمواعيد.\n' +
-'5. ممنوع منعاً باتاً استخدام أي حروف أو لغة غير العربية والإنجليزية (مثل الصينية أو اليابانية) تحت أي ظرف.\n\n' +
+'3. إذا سُئلت عن شيء غير مذكور في المعلومات، اعتذر بأدب ووجّهه للتواصل مع فريق الدعم: +971 50 334 5946 أو زيارة صالة عرض جميرا.\n' +
+'4. أجب بأسلوب ودي وواضح ومختصر مع الدقة الكاملة بالأرقام والمواعيد.\n\n' +
 '=== بروفايل الشركة ===\n' +
 'الاسم: SAI Kitchen, Wardrobe & Offices (تأسست 2017).\n' +
 'المدير التنفيذي: المهندس هيثم شقوارة.\n' +
-'الفروع: صالة عرض في شارع جميرا (أم سقيم 1) وليس لدينا فروع ولكن نشتغل في كل الإمارات- دبي. المصنع الرئيسي فيأم القوين (آلات نجارة أوروبية). مصنع Shayash Solid Surface للأسطح.\n' +
+'الفروع: صالة عرض في شارع جميرا (أم سقيم 1) - دبي. المصنع الرئيسي في أم الثعوب 7 - أم القوين (آلات نجارة أوروبية). مصنع Shayash Solid Surface للأسطح.\n' +
 'العلامات التجارية: ARTE CUCINE (مطابخ فاخرة بمعايير ألمانية وإيطالية)، NOMA Wardrobes (خزائن ذكية)، TAWLA (أثاث مكتبي).\n' +
-'المنتجات: مطابخ مخصصة، خزائن ملابس، أثاث مكاتب، منصات استقبال، أثاث فنادق ومستشفيات، تجليد حوائط، لا نشتغل أجزاء فقط من مطابخ أو خزائن أو أي شغل يعتبر جزء، ولا نشتغل ألمنيوم، لدينا أكثر من 440 تقييم على جوجل رفيوز بتقدير 4.9 من أصل 5 نجوم، في الأبواب نشتغل فقط الأبواب الخفية، أسطح صلبة.\n' +
+'المنتجات: مطابخ مخصصة، خزائن ملابس، أثاث مكاتب، منصات استقبال، أثاث فنادق ومستشفيات، تجليد حوائط، أسطح صلبة.\n' +
+'ملاحظات مهمة عن المنتجات:\n' +
+'- SAI لا تعمل بمواد الألمنيوم ولا تصنّع أجزاء أو قطع منفصلة — نقدم منتجات متكاملة فقط.\n' +
+'- في الأبواب: SAI تصنع الأبواب الخفية (Hidden Doors) فقط.\n' +
+'- لا يوجد فروع لـ SAI؛ لكننا نخدم ونركّب في جميع أنحاء الإمارات العربية المتحدة.\n' +
 'الشركاء: TEKA, MVP Appliances, ELBA, elica, Foster, LIEBHERR, ALGOR.\n' +
 'الشهادات: ISO 9001, ISO 14001, ISO 45001.\n' +
 'التواصل: +971 50 334 5946 | شارع جميرا، أم سقيم 1، دبي.\n\n' +
@@ -125,6 +128,56 @@ exports.handler = async function (event) {
   }
 
   const history = Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY_TURNS) : [];
+  const safeHistory = history
+    .filter(h => h && (h.role === 'user' || h.role === 'assistant') && h.content)
+    .map(h => ({ role: h.role, content: String(h.content).slice(0, MAX_MESSAGE_LEN) }));
+
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    console.error('GROQ_API_KEY is not set in Netlify environment variables.');
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server not configured' }) };
+  }
+
+  const messages = [
+    { role: 'system', content: CONTRACT_CTX },
+    ...safeHistory,
+    { role: 'user', content: message }
+  ];
+
+  try {
+    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        temperature: 0.3,
+        max_tokens: 600
+      })
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('Groq API error:', resp.status, errText);
+      return { statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) };
+    }
+
+    const data = await resp.json();
+    const reply = data?.choices?.[0]?.message?.content?.trim();
+
+    if (!reply) {
+      return { statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) };
+    }
+
+    return { statusCode: 200, headers, body: JSON.stringify({ reply }) };
+  } catch (err) {
+    console.error('Function error:', err);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) };
+  }
+}; const history = Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY_TURNS) : [];
   const safeHistory = history
     .filter(h => h && (h.role === 'user' || h.role === 'assistant') && h.content)
     .map(h => ({ role: h.role, content: String(h.content).slice(0, MAX_MESSAGE_LEN) }));
