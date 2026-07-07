@@ -1,10 +1,9 @@
 // netlify/functions/sai-chat.js
 // -----------------------------------------------------------------------
 // Secure AI proxy for the SAI contract assistant.
-// The Groq API key NEVER touches the browser — it lives only in
+// The Gemini API key NEVER touches the browser — it lives only in
 // Netlify's environment variables (Site settings -> Environment variables
-// -> GROQ_API_KEY). The client calls this function; this function calls
-// Groq on the server side and returns only the reply text.
+// -> GEMINI_API_KEY).
 // -----------------------------------------------------------------------
 
 const CONTRACT_CTX =
@@ -55,7 +54,7 @@ const CONTRACT_CTX =
 'C-8: إذا وفّر العميل الكاونتر توب، SAI غير مسؤولة عن الدعم الفولاذي أو مواقع القص.\n' +
 'C-9: SAI تثبت العناصر ثانوياً؛ العميل يكمل التوصيلات الكهربائية والسباكة الرئيسية.\n' +
 'C-10: إذا كان الكاونتر توب من SAI والحوض/الخلاط غير مشمول، العميل يقدم مواقعهم عند الاعتماد النهائي.\n' +
-'C-11: العميل يمكنه تأجيل التركيب 7 أيام قبل الموعد؛ الموعد الجديد خلال 30 يوم عمل.\n' +
+'C-11: العميل يمكنه تأجيل التركيب 7 أيام قبل الموعد; الموعد الجديد خلال 30 يوم عمل.\n' +
 'C-12: عند التأجيل بطلب العميل: يدفع 90% عند اكتمال التصنيع، و10% قبل 7 أيام من الموعد الجديد.\n' +
 'C-13: مدة التركيب تُحدد حسب قيمة العقد والإنتاجية اليومية وتوفر الفريق.\n' +
 'C-14: تعديل الموقع بعد الزيارة النهائية يُحمّل العميل كل تكاليف الأعمال الإضافية.\n' +
@@ -96,7 +95,7 @@ const CONTRACT_CTX =
 'حماية وتنظيف المنطقة؛ تركيب دقيق؛ إصلاح أي ضرر يسببه فريق SAI؛ احترام ممتلكات العميل؛ اتباع التصميم المعتمد 100%؛ توصيل مواد كالعينات؛ استبدال المواد التالفة تحت الضمان؛ الالتزام بالجدول أو إبلاغ العميل؛ استخدام المواد المتفق عليها؛ تركيب آمن للإكسسوارات؛ دعم الضمان؛ الشفافية؛ عدم المغادرة إلا برضا العميل؛ التعاون مع أطراف ثالثة؛ الاعتراف بالأخطاء وإصلاحها؛ سلوك مهني؛ إبقاء العميل مطلعاً؛ إرسال دليل التنظيف؛ البقاء متاحين بعد التسليم.\n' +
 'تذكير: اللغة أو السلوك المسيء قد يؤدي لرفض الخدمة.';
 
-const MODEL = 'gemini-2.5-flash'; // Gemini free-tier model
+const MODEL = 'gemini-2.5-flash'; 
 const MAX_MESSAGE_LEN = 800;
 const MAX_HISTORY_TURNS = 6;
 
@@ -139,8 +138,8 @@ exports.handler = async function (event) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server not configured' }) };
   }
 
+  // مصفوفة الرسائل تحتوي فقط على تاريخ المحادثة والرسالة الحالية بدون سياق الـ system
   const messages = [
-    { role: 'system', content: CONTRACT_CTX },
     ...safeHistory,
     { role: 'user', content: message }
   ];
@@ -148,13 +147,15 @@ exports.handler = async function (event) {
   try {
     const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
       method: 'POST',
-      headers: {
+      headers = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify({
         model: MODEL,
         messages,
+        // 👇 هنا نمرر سياق النظام بالشكل الصحيح والمتوافق تماماً مع Gemini API ليتجنب خطأ الـ 400
+        system_instruction: CONTRACT_CTX, 
         temperature: 0.3,
         max_tokens: 600
       })
