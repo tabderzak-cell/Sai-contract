@@ -1,11 +1,12 @@
 // netlify/functions/sai-chat.js
 // -----------------------------------------------------------------------
 // Secure AI proxy for the SAI contract assistant.
-// The Groq API key NEVER touches the browser — it lives only in
+// The Gemini API key NEVER touches the browser — it lives only in
 // Netlify's environment variables (Site settings -> Environment variables
-// -> GROQ_API_KEY). The client calls this function; this function calls
-// Groq on the server side and returns only the reply text.
+// -> GEMINI_API_KEY). The client calls this function; this function calls
+// Gemini on the server side and returns only the reply text.
 // -----------------------------------------------------------------------
+
 const CONTRACT_CTX =
 'أنت خبير خدمة عملاء ومستشار فني ذكي لشركة SAI Kitchen, Wardrobe & Offices في الإمارات العربية المتحدة. تصرف كخبير بشري محترف ولبق وذكي جداً. افهم سياق العميل ونبرته وفحوى سؤاله كإنسان ذكي.\n\n' +
 'قواعد صارمة:\n' +
