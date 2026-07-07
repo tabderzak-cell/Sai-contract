@@ -5,6 +5,9 @@
 // Netlify's environment variables (Site settings -> Environment variables
 // -> GEMINI_API_KEY). The client calls this function; this function calls
 // Gemini on the server side and returns only the reply text.
+//
+// v2: added automatic retry with backoff + fallback model to avoid the
+// bot going silent when the primary model hits its free-tier rate limit.
 // -----------------------------------------------------------------------
 
 const CONTRACT_CTX =
@@ -97,9 +100,77 @@ const CONTRACT_CTX =
 'حماية وتنظيف المنطقة؛ تركيب دقيق؛ إصلاح أي ضرر يسببه فريق SAI؛ احترام ممتلكات العميل؛ اتباع التصميم المعتمد 100%؛ توصيل مواد كالعينات؛ استبدال المواد التالفة تحت الضمان؛ الالتزام بالجدول أو إبلاغ العميل؛ استخدام المواد المتفق عليها؛ تركيب آمن للإكسسوارات؛ دعم الضمان؛ الشفافية؛ عدم المغادرة إلا برضا العميل؛ التعاون مع أطراف ثالثة؛ الاعتراف بالأخطاء وإصلاحها؛ سلوك مهني؛ إبقاء العميل مطلعاً؛ إرسال دليل التنظيف؛ البقاء متاحين بعد التسليم.\n' +
 'تذكير: اللغة أو السلوك المسيء قد يؤدي لرفض الخدمة.';
 
-const MODEL = 'gemini-2.5-flash';
+// الموديل الأساسي، وموديل احتياطي له كوتا منفصلة عن الأساسي
+const PRIMARY_MODEL = 'gemini-2.5-flash';
+const FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+
 const MAX_MESSAGE_LEN = 800;
 const MAX_HISTORY_TURNS = 6;
+
+// إعدادات إعادة المحاولة
+const MAX_RETRIES_PER_MODEL = 2;
+const BASE_DELAY_MS = 700; // يزيد أضعافاً مع كل محاولة (backoff)
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// يستدعي Gemini مع إعادة محاولة تلقائية عند 429 / 503
+async function callGeminiWithRetry(model, apiKey, contents) {
+  const url = https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey};
+
+  let lastStatus = null;
+  let lastErrText = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES_PER_MODEL; attempt++) {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          systemInstruction: { parts: [{ text: CONTRACT_CTX }] },
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 600
+          }
+        })
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (reply) {
+          return { ok: true, reply };
+        }
+        // رد فاضي من Gemini — يعتبر فشل قابل لإعادة المحاولة
+        lastStatus = 502;
+        lastErrText = 'Empty AI response';
+      } else {
+        lastStatus = resp.status;
+        lastErrText = await resp.text();
+        console.error(Gemini error [${model}] attempt ${attempt}:, resp.status, lastErrText);
+
+        // فقط 429 (rate limit) و 503 (overloaded) يستحقون إعادة محاولة
+        if (resp.status !== 429 && resp.status !== 503) {
+          break;
+        }
+      }
+    } catch (err) {
+      lastStatus = 500;
+      lastErrText = String(err);
+      console.error(Network error [${model}] attempt ${attempt}:, err);
+    }
+
+    // لا تنتظر بعد آخر محاولة على هذا الموديل
+    if (attempt < MAX_RETRIES_PER_MODEL) {
+      const delay = BASE_DELAY_MS * Math.pow(2, attempt); // 700ms, 1400ms, ...
+      await sleep(delay);
+    }
+  }
+
+  return { ok: false, status: lastStatus, errText: lastErrText };
+}
 
 exports.handler = async function (event) {
   const headers = {
@@ -130,10 +201,8 @@ exports.handler = async function (event) {
   }
 
   const history = Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY_TURNS) : [];
-  
-  // بناء مصفوفة المحادثة بصيغة جميني النظيفة (contents)
+
   const contents = [];
-  
   history.forEach(h => {
     if (h && h.content && (h.role === 'user' || h.role === 'assistant')) {
       contents.push({
@@ -143,11 +212,7 @@ exports.handler = async function (event) {
     }
   });
 
-  // إضافة رسالة المستخدم الحالية
-  contents.push({
-    role: 'user',
-    parts: [{ text: message }]
-  });
+  contents.push({ role: 'user', parts: [{ text: message }] });
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -155,43 +220,26 @@ exports.handler = async function (event) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server not configured' }) };
   }
 
-  // رابط جميني الرسمي والمستقر والمباشر لتجنب مشاكل التوقف العشوائي لمسارات التوافق
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
+  // 1) جرب الموديل الأساسي مع إعادة محاولة
+  let result = await callGeminiWithRetry(PRIMARY_MODEL, apiKey, contents);
 
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: contents,
-        systemInstruction: {
-          parts: [{ text: CONTRACT_CTX }]
-        },
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 600
-        }
-      })
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      console.error('Gemini API error:', resp.status, errText);
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) };
-    }
-
-    const data = await resp.json();
-    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-
-    if (!reply) {
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) };
-    }
-
-    return { statusCode: 200, headers, body: JSON.stringify({ reply }) };
-  } catch (err) {
-    console.error('Function error:', err);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) };
+  // 2) لو فشل بسبب rate limit / overload، جرب الموديل الاحتياطي (كوتا منفصلة)
+  if (!result.ok && (result.status === 429 || result.status === 503)) {
+    console.warn(Primary model (${PRIMARY_MODEL}) exhausted, switching to fallback (${FALLBACK_MODEL}));
+    result = await callGeminiWithRetry(FALLBACK_MODEL, apiKey, contents);
   }
+
+  if (!result.ok) {
+    // رسالة عربية/ودية بدل ما ترجع فشل صامت للواجهة
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        reply:
+          'عذراً، الخدمة مزدحمة حالياً لحظة واحدة 🙏 يرجى إعادة إرسال سؤالك بعد قليل، أو التواصل مباشرة على +971 50 334 5946.'
+      })
+    };
+  }
+
+  return { statusCode: 200, headers, body: JSON.stringify({ reply: result.reply }) };
 };
