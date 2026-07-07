@@ -10,7 +10,7 @@ const CONTRACT_CTX =
 '2. رحب بالعميل بلباقة إذا ألقى التحية (مثل: مرحبا، السلام عليكم)، ثم أظهر استعدادك لمساعدته في كل ما يخص شركة SAI وعقودها.\n' +
 '3. إذا كان السؤال الفعلي خارج نطاق خدمات ومنتجات وعقد SAI، اعتذر بلباقة وأخبره أنك مخصص فقط لمساعدته في كل ما يخص SAI.\n' +
 '4. إذا سُئلت عن شيء غير مذكور في المعلومات، اعتذر بأدب ووجّهه للتواصل مع فريق الدعم: +971 50 334 5946 أو زيارة صالة عرض جميرا.\n' +
-'5. أجب بأسلوب ودي وواضح ومختصر مع الدقة الكاملة بالأرقام والمواعيد.\n\n' +
+'5. أجب بأسلوب ودي وواحد ومختصر مع الدقة الكاملة بالأرقام والمواعيد.\n\n' +
 '=== بروفايل الشركة ===\n' +
 'الاسم: SAI Kitchen, Wardrobe & Offices (تأسست 2017).\n' +
 'المدير التنفيذي: المهندس هيثم شقوارة.\n' +
@@ -33,7 +33,7 @@ const CONTRACT_CTX =
 'A-4: العقد يشمل التوصيل والتركيب حسب الرسومات النهائية الموقعة، إلا إذا نُص على غير ذلك بعرض السعر.\n' +
 'A-5: SAI مسؤولة عن إنشاء مجموعة واتساب مع العميل.\n\n' +
 '--- B. نطاق عمل الطرف الثاني (العميل) ---\n' +
-'B-1.1: SAI تركب الخلاطات والهوود والأجهزة فقط إذا كانت مذكورة بعرض السعر. العميل يفحص ويوقع استلاف الأجهزة. إذا وفّر العميل الأجهزة، يقدم بيانات تقنية دقيقة عند اعتماد الرسومات؛ SAI غير مسؤولة عن مشاكل أجهزة العميل.\n' +
+'B-1.1: SAI تركب الخلاطات والهوود والأجهزة فقط إذا كانت مذكورة بعرض السعر. العميل يفحص ويوقع استلام الأجهزة. إذا وفّر العميل الأجهزة، يقدم بيانات تقنية دقيقة عند اعتماد الرسومات؛ SAI غير مسؤولة عن مشاكل أجهزة العميل.\n' +
 'B-1.2: إذا وفّرت SAI الهوود، العمل يقتصر على تركيب الوحدة فقط؛ قنوات التهوية الخارجية مسؤولية العميل.\n' +
 'B-1.3: الهوود المثبت بالسقف: العميل يوفر الدعم الإنشائي قبل التركيب إلا إذا ذُكر بالعرض.\n' +
 'B-1.4: نقل أو تعديل خطوط الغاز بكل التصاريح مسؤولية العميل الكاملة.\n' +
@@ -86,7 +86,7 @@ const CONTRACT_CTX =
 'G-2.1: ضمان الإكسسوارات والإضاءة والأجهزة سنة واحدة؛ لا يشمل سوء الاستخدام أو تسرب المياه أو الكوارث أو أشعة الشمس أو الحرائق.\n' +
 'G-2.2: الضمان لا يغطي الحمل الزائد عن حدود المصنّع.\n' +
 'G-3: ضمان الكاونتر توب 12 شهراً، يغطي عيوب التركيب فقط. مستثنى: الحرارة والخدوش والبقع بالحجر الطبيعي والكوارتز، التفاوتات الطبيعية، سوء الاستخدام.\n' +
-'G-4: ضمان الأرضيات (SPC/LVT) سنة واحدة، يغطي آلية القفل وعدم بهتان اللون. مستثنى: سوء الاستخدام, الحوادث، العمل من أطراف ثالثة، التآكل الطبيعي.\n' +
+'G-4: ضمان الأرضيات (SPC/LVT) سنة واحدة، يغطي آلية القفل وعدم بهتان اللون. مستثنى: سوء الاستخدام، الحوادث، العمل من أطراف ثالثة، التآكل الطبيعي.\n' +
 'G-5: SAI غير مسؤولة عن ضرر أو فقدان ممتلكات العميل الخاصة.\n' +
 'G-6: الضمان يبطل بسبب: إعادة التركيب أو النقل، الصيانة غير الكافية، التعامل من غير فنيي SAI، التعديل أو العبث.\n\n' +
 '--- مسؤوليات SAI ---\n' +
@@ -96,6 +96,9 @@ const CONTRACT_CTX =
 const MODEL = 'gemini-2.5-flash';
 const MAX_MESSAGE_LEN = 800;
 const MAX_HISTORY_TURNS = 6;
+
+// 👇 جلب مكتبة الحماية والاتصال عبر لغات برمجية مختلفة لضمان عمل الفيتش على نيتليفي القديم والحديث
+const https = require('https');
 
 exports.handler = async function (event) {
   const headers = {
@@ -142,37 +145,55 @@ exports.handler = async function (event) {
     { role: 'user', content: message }
   ];
 
-  try {
-    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/v1/chat/completions', {
+  // استخدام وحدة https الأساسية لضمان عمل الاتصال على خوادم نيتليفي 100% بدون مشاكل في إصدارات الفيتش
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({
+      model: MODEL,
+      messages,
+      temperature: 0.3,
+      max_tokens: 600
+    });
+
+    const options = {
+      hostname: 'generativelanguage.googleapis.com',
+      path: '/v1beta/openai/v1/chat/completions',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        temperature: 0.3,
-        max_tokens: 600
-      })
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          console.error('Gemini error text:', data);
+          resolve({ statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) });
+          return;
+        }
+        try {
+          const parsed = JSON.parse(data);
+          const reply = parsed?.choices?.[0]?.message?.content?.trim();
+          if (!reply) {
+            resolve({ statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) });
+          } else {
+            resolve({ statusCode: 200, headers, body: JSON.stringify({ reply }) });
+          }
+        } catch (e) {
+          resolve({ statusCode: 502, headers, body: JSON.stringify({ error: 'Failed to parse AI response' }) });
+        }
+      });
     });
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      console.error('Gemini API error:', resp.status, errText);
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) };
-    }
+    req.on('error', (err) => {
+      console.error('Request error:', err);
+      resolve({ statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) });
+    });
 
-    const data = await resp.json();
-    const reply = data?.choices?.[0]?.message?.content?.trim();
-
-    if (!reply) {
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) };
-    }
-
-    return { statusCode: 200, headers, body: JSON.stringify({ reply }) };
-  } catch (err) {
-    console.error('Function error:', err);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) };
-  }
+    req.write(postData);
+    req.end();
+  });
 };
