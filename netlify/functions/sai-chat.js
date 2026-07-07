@@ -96,86 +96,42 @@ const CONTRACT_CTX =
 'حماية وتنظيف المنطقة؛ تركيب دقيق؛ إصلاح أي ضرر يسببه فريق SAI؛ احترام ممتلكات العميل؛ اتباع التصميم المعتمد 100%؛ توصيل مواد كالعينات؛ استبدال المواد التالفة تحت الضمان؛ الالتزام بالجدول أو إبلاغ العميل؛ استخدام المواد المتفق عليها؛ تركيب آمن للإكسسوارات؛ دعم الضمان؛ الشفافية؛ عدم المغادرة إلا برضا العميل؛ التعاون مع أطراف ثالثة؛ الاعتراف بالأخطاء وإصلاحها؛ سلوك مهني؛ إبقاء العميل مطلعاً؛ إرسال دليل التنظيف؛ البقاء متاحين بعد التسليم.\n' +
 'تذكير: اللغة أو السلوك المسيء قد يؤدي لرفض الخدمة.';
 
-const MODEL = 'gemini-2.5-flash'; // Gemini free-tier model
-const MAX_MESSAGE_LEN = 800;
-const MAX_HISTORY_TURNS = 6;
+const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
 
-exports.handler = async function (event) {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'application/json'
-  };
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: contents,
+        systemInstruction: {
+          parts: [{ text: CONTRACT_CTX }]
+        },
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 600
+        }
+      })
+    });
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
-  }
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('Gemini API error:', resp.status, errText);
+      return { statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) };
+    }
 
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
-  }
+    const data = await resp.json();
+    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
-  let payload;
-  try {
-    payload = JSON.parse(event.body || '{}');
-  } catch (e) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) };
-  }
+    if (!reply) {
+      return { statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) };
+    }
 
-  const message = String(payload.message || '').trim().slice(0, MAX_MESSAGE_LEN);
-  if (!message) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Empty message' }) };
-  }
-
-  const history = Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY_TURNS) : [];
-  const safeHistory = history
-    .filter(h => h && (h.role === 'user' || h.role === 'assistant') && h.content)
-    .map(h => ({ role: h.role, content: String(h.content).slice(0, MAX_MESSAGE_LEN) }));
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error('GEMINI_API_KEY is not set in Netlify environment variables.');
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server not configured' }) };
-  }
-
-  const messages = [
-    { role: 'system', content: CONTRACT_CTX },
-    ...safeHistory,
-    { role: 'user', content: message }
-  ];
-
-  try {
-    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        temperature: 0.3,
-        max_tokens: 600
-      })
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      console.error('Gemini API error:', resp.status, errText);
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) };
-    }
-
-    const data = await resp.json();
-    const reply = data?.choices?.[0]?.message?.content?.trim();
-
-    if (!reply) {
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) };
-    }
-
-    return { statusCode: 200, headers, body: JSON.stringify({ reply }) };
-  } catch (err) {
-    console.error('Function error:', err);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) };
-  }
+    return { statusCode: 200, headers, body: JSON.stringify({ reply }) };
+  } catch (err) {
+    console.error('Function error:', err);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) };
+  }
 };
