@@ -51,7 +51,7 @@ const CONTRACT_CTX =
 'C-5: SAI مسؤولة فقط عن التركيب والتثبيت الثانوي. أعمال MEP الأساسية مسؤولية العميل.\n' +
 'C-6: SAI تركب الإضاءة الثانوية إذا كانت مذكورة؛ العميل يوفر الأسلاك الرئيسية مسبقاً.\n' +
 'C-7: تركيب الكاونتر توب يستغرق 7-10 أيام عمل بعد الأعمال الخشبية.\n' +
-'C-8: إذا وفّر العميل الكاونتر توب، SAI غير مسؤولة عن الدعم الفولاذي أو مواقع القص.\n' +
+'C-8: إذا وفّر العميل الكاونتر توب, SAI غير مسؤولة عن الدعم الفولاذي أو مواقع القص.\n' +
 'C-9: SAI تثبت العناصر ثانوياً؛ العميل يكمل التوصيلات الكهربائية والسباكة الرئيسية.\n' +
 'C-10: إذا كان الكاونتر توب من SAI والحوض/الخلاط غير مشمول، العميل يقدم مواقعهم عند الاعتماد النهائي.\n' +
 'C-11: العميل يمكنه تأجيل التركيب 7 أيام قبل الموعد; الموعد الجديد خلال 30 يوم عمل.\n' +
@@ -138,7 +138,6 @@ exports.handler = async function (event) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server not configured' }) };
   }
 
-  // مصفوفة الرسائل تحتوي فقط على تاريخ المحادثة والرسالة الحالية بدون سياق الـ system
   const messages = [
     ...safeHistory,
     { role: 'user', content: message }
@@ -147,14 +146,13 @@ exports.handler = async function (event) {
   try {
     const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
       method: 'POST',
-      headers = {
+      headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
         model: MODEL,
         messages,
-        // 👇 هنا نمرر سياق النظام بالشكل الصحيح والمتوافق تماماً مع Gemini API ليتجنب خطأ الـ 400
         system_instruction: CONTRACT_CTX, 
         temperature: 0.3,
         max_tokens: 600
