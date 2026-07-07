@@ -1,19 +1,16 @@
 // netlify/functions/sai-chat.js
 // -----------------------------------------------------------------------
 // Secure AI proxy for the SAI contract assistant.
-// The Groq API key NEVER touches the browser — it lives only in
-// Netlify's environment variables (Site settings -> Environment variables
-// -> GROQ_API_KEY). The client calls this function; this function calls
-// Groq on the server side and returns only the reply text.
 // -----------------------------------------------------------------------
 
 const CONTRACT_CTX =
 'أنت خبير خدمة عملاء ومستشار فني ذكي لشركة SAI Kitchen, Wardrobe & Offices في الإمارات العربية المتحدة. تصرف كخبير بشري محترف ولبق وذكي جداً. افهم سياق العميل ونبرته وفحوى سؤاله كإنسان ذكي.\n\n' +
 'قواعد صارمة:\n' +
 '1. أجب دائماً بنفس لغة سؤال العميل تلقائياً.\n' +
-'2. إذا كان السؤال خارج نطاق خدمات ومنتجات وعقد SAI، اعتذر بلباقة وأخبره أنك مخصص فقط لمساعدته في كل ما يخص SAI.\n' +
-'3. إذا سُئلت عن شيء غير مذكور في المعلومات، اعتذر بأدب ووجّهه للتواصل مع فريق الدعم: +971 50 334 5946 أو زيارة صالة عرض جميرا.\n' +
-'4. أجب بأسلوب ودي وواضح ومختصر مع الدقة الكاملة بالأرقام والمواعيد.\n\n' +
+'2. رحب بالعميل بلباقة إذا ألقى التحية (مثل: مرحبا، السلام عليكم)، ثم أظهر استعدادك لمساعدته في كل ما يخص شركة SAI وعقودها.\n' +
+'3. إذا كان السؤال الفعلي خارج نطاق خدمات ومنتجات وعقد SAI، اعتذر بلباقة وأخبره أنك مخصص فقط لمساعدته في كل ما يخص SAI.\n' +
+'4. إذا سُئلت عن شيء غير مذكور في المعلومات، اعتذر بأدب ووجّهه للتواصل مع فريق الدعم: +971 50 334 5946 أو زيارة صالة عرض جميرا.\n' +
+'5. أجب بأسلوب ودي وواضح ومختصر مع الدقة الكاملة بالأرقام والمواعيد.\n\n' +
 '=== بروفايل الشركة ===\n' +
 'الاسم: SAI Kitchen, Wardrobe & Offices (تأسست 2017).\n' +
 'المدير التنفيذي: المهندس هيثم شقوارة.\n' +
@@ -36,7 +33,7 @@ const CONTRACT_CTX =
 'A-4: العقد يشمل التوصيل والتركيب حسب الرسومات النهائية الموقعة، إلا إذا نُص على غير ذلك بعرض السعر.\n' +
 'A-5: SAI مسؤولة عن إنشاء مجموعة واتساب مع العميل.\n\n' +
 '--- B. نطاق عمل الطرف الثاني (العميل) ---\n' +
-'B-1.1: SAI تركب الخلاطات والهوود والأجهزة فقط إذا كانت مذكورة بعرض السعر. العميل يفحص ويوقع استلام الأجهزة. إذا وفّر العميل الأجهزة، يقدم بيانات تقنية دقيقة عند اعتماد الرسومات؛ SAI غير مسؤولة عن مشاكل أجهزة العميل.\n' +
+'B-1.1: SAI تركب الخلاطات والهوود والأجهزة فقط إذا كانت مذكورة بعرض السعر. العميل يفحص ويوقع استلاف الأجهزة. إذا وفّر العميل الأجهزة، يقدم بيانات تقنية دقيقة عند اعتماد الرسومات؛ SAI غير مسؤولة عن مشاكل أجهزة العميل.\n' +
 'B-1.2: إذا وفّرت SAI الهوود، العمل يقتصر على تركيب الوحدة فقط؛ قنوات التهوية الخارجية مسؤولية العميل.\n' +
 'B-1.3: الهوود المثبت بالسقف: العميل يوفر الدعم الإنشائي قبل التركيب إلا إذا ذُكر بالعرض.\n' +
 'B-1.4: نقل أو تعديل خطوط الغاز بكل التصاريح مسؤولية العميل الكاملة.\n' +
@@ -89,93 +86,93 @@ const CONTRACT_CTX =
 'G-2.1: ضمان الإكسسوارات والإضاءة والأجهزة سنة واحدة؛ لا يشمل سوء الاستخدام أو تسرب المياه أو الكوارث أو أشعة الشمس أو الحرائق.\n' +
 'G-2.2: الضمان لا يغطي الحمل الزائد عن حدود المصنّع.\n' +
 'G-3: ضمان الكاونتر توب 12 شهراً، يغطي عيوب التركيب فقط. مستثنى: الحرارة والخدوش والبقع بالحجر الطبيعي والكوارتز، التفاوتات الطبيعية، سوء الاستخدام.\n' +
-'G-4: ضمان الأرضيات (SPC/LVT) سنة واحدة، يغطي آلية القفل وعدم بهتان اللون. مستثنى: سوء الاستخدام، الحوادث، العمل من أطراف ثالثة، التآكل الطبيعي.\n' +
+'G-4: ضمان الأرضيات (SPC/LVT) سنة واحدة، يغطي آلية القفل وعدم بهتان اللون. مستثنى: سوء الاستخدام, الحوادث، العمل من أطراف ثالثة، التآكل الطبيعي.\n' +
 'G-5: SAI غير مسؤولة عن ضرر أو فقدان ممتلكات العميل الخاصة.\n' +
 'G-6: الضمان يبطل بسبب: إعادة التركيب أو النقل، الصيانة غير الكافية، التعامل من غير فنيي SAI، التعديل أو العبث.\n\n' +
 '--- مسؤوليات SAI ---\n' +
 'حماية وتنظيف المنطقة؛ تركيب دقيق؛ إصلاح أي ضرر يسببه فريق SAI؛ احترام ممتلكات العميل؛ اتباع التصميم المعتمد 100%؛ توصيل مواد كالعينات؛ استبدال المواد التالفة تحت الضمان؛ الالتزام بالجدول أو إبلاغ العميل؛ استخدام المواد المتفق عليها؛ تركيب آمن للإكسسوارات؛ دعم الضمان؛ الشفافية؛ عدم المغادرة إلا برضا العميل؛ التعاون مع أطراف ثالثة؛ الاعتراف بالأخطاء وإصلاحها؛ سلوك مهني؛ إبقاء العميل مطلعاً؛ إرسال دليل التنظيف؛ البقاء متاحين بعد التسليم.\n' +
 'تذكير: اللغة أو السلوك المسيء قد يؤدي لرفض الخدمة.';
 
-const MODEL = 'gemini-2.5-flash'; // Gemini free-tier model
+const MODEL = 'gemini-2.5-flash';
 const MAX_MESSAGE_LEN = 800;
 const MAX_HISTORY_TURNS = 6;
 
 exports.handler = async function (event) {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'application/json'
-  };
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json'
+  };
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
-  }
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers, body: '' };
+  }
 
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
-  }
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
 
-  let payload;
-  try {
-    payload = JSON.parse(event.body || '{}');
-  } catch (e) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) };
-  }
+  let payload;
+  try {
+    payload = JSON.parse(event.body || '{}');
+  } catch (e) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) };
+  }
 
-  const message = String(payload.message || '').trim().slice(0, MAX_MESSAGE_LEN);
-  if (!message) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Empty message' }) };
-  }
+  const message = String(payload.message || '').trim().slice(0, MAX_MESSAGE_LEN);
+  if (!message) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Empty message' }) };
+  }
 
-  const history = Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY_TURNS) : [];
-  const safeHistory = history
-    .filter(h => h && (h.role === 'user' || h.role === 'assistant') && h.content)
-    .map(h => ({ role: h.role, content: String(h.content).slice(0, MAX_MESSAGE_LEN) }));
+  const history = Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY_TURNS) : [];
+  const safeHistory = history
+    .filter(h => h && (h.role === 'user' || h.role === 'assistant') && h.content)
+    .map(h => ({ role: h.role, content: String(h.content).slice(0, MAX_MESSAGE_LEN) }));
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error('GEMINI_API_KEY is not set in Netlify environment variables.');
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server not configured' }) };
-  }
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.error('GEMINI_API_KEY is not set in Netlify environment variables.');
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server not configured' }) };
+  }
 
-  const messages = [
-    { role: 'system', content: CONTRACT_CTX },
-    ...safeHistory,
-    { role: 'user', content: message }
-  ];
+  const messages = [
+    { role: 'system', content: CONTRACT_CTX },
+    ...safeHistory,
+    { role: 'user', content: message }
+  ];
 
-  try {
-    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        temperature: 0.3,
-        max_tokens: 600
-      })
-    });
+  try {
+    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        temperature: 0.3,
+        max_tokens: 600
+      })
+    });
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      console.error('Gemini API error:', resp.status, errText);
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) };
-    }
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('Gemini API error:', resp.status, errText);
+      return { statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) };
+    }
 
-    const data = await resp.json();
-    const reply = data?.choices?.[0]?.message?.content?.trim();
+    const data = await resp.json();
+    const reply = data?.choices?.[0]?.message?.content?.trim();
 
-    if (!reply) {
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) };
-    }
+    if (!reply) {
+      return { statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) };
+    }
 
-    return { statusCode: 200, headers, body: JSON.stringify({ reply }) };
-  } catch (err) {
-    console.error('Function error:', err);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) };
-  }
-};   هل هو صحيح؟ 
+    return { statusCode: 200, headers, body: JSON.stringify({ reply }) };
+  } catch (err) {
+    console.error('Function error:', err);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) };
+  }
+};
