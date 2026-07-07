@@ -1,9 +1,10 @@
 // netlify/functions/sai-chat.js
 // -----------------------------------------------------------------------
 // Secure AI proxy for the SAI contract assistant.
-// The Gemini API key NEVER touches the browser — it lives only in
+// The Groq API key NEVER touches the browser — it lives only in
 // Netlify's environment variables (Site settings -> Environment variables
-// -> GEMINI_API_KEY).
+// -> GROQ_API_KEY). The client calls this function; this function calls
+// Groq on the server side and returns only the reply text.
 // -----------------------------------------------------------------------
 
 const CONTRACT_CTX =
@@ -51,10 +52,10 @@ const CONTRACT_CTX =
 'C-5: SAI مسؤولة فقط عن التركيب والتثبيت الثانوي. أعمال MEP الأساسية مسؤولية العميل.\n' +
 'C-6: SAI تركب الإضاءة الثانوية إذا كانت مذكورة؛ العميل يوفر الأسلاك الرئيسية مسبقاً.\n' +
 'C-7: تركيب الكاونتر توب يستغرق 7-10 أيام عمل بعد الأعمال الخشبية.\n' +
-'C-8: إذا وفّر العميل الكاونتر توب, SAI غير مسؤولة عن الدعم الفولاذي أو مواقع القص.\n' +
+'C-8: إذا وفّر العميل الكاونتر توب، SAI غير مسؤولة عن الدعم الفولاذي أو مواقع القص.\n' +
 'C-9: SAI تثبت العناصر ثانوياً؛ العميل يكمل التوصيلات الكهربائية والسباكة الرئيسية.\n' +
 'C-10: إذا كان الكاونتر توب من SAI والحوض/الخلاط غير مشمول، العميل يقدم مواقعهم عند الاعتماد النهائي.\n' +
-'C-11: العميل يمكنه تأجيل التركيب 7 أيام قبل الموعد; الموعد الجديد خلال 30 يوم عمل.\n' +
+'C-11: العميل يمكنه تأجيل التركيب 7 أيام قبل الموعد؛ الموعد الجديد خلال 30 يوم عمل.\n' +
 'C-12: عند التأجيل بطلب العميل: يدفع 90% عند اكتمال التصنيع، و10% قبل 7 أيام من الموعد الجديد.\n' +
 'C-13: مدة التركيب تُحدد حسب قيمة العقد والإنتاجية اليومية وتوفر الفريق.\n' +
 'C-14: تعديل الموقع بعد الزيارة النهائية يُحمّل العميل كل تكاليف الأعمال الإضافية.\n' +
@@ -95,86 +96,86 @@ const CONTRACT_CTX =
 'حماية وتنظيف المنطقة؛ تركيب دقيق؛ إصلاح أي ضرر يسببه فريق SAI؛ احترام ممتلكات العميل؛ اتباع التصميم المعتمد 100%؛ توصيل مواد كالعينات؛ استبدال المواد التالفة تحت الضمان؛ الالتزام بالجدول أو إبلاغ العميل؛ استخدام المواد المتفق عليها؛ تركيب آمن للإكسسوارات؛ دعم الضمان؛ الشفافية؛ عدم المغادرة إلا برضا العميل؛ التعاون مع أطراف ثالثة؛ الاعتراف بالأخطاء وإصلاحها؛ سلوك مهني؛ إبقاء العميل مطلعاً؛ إرسال دليل التنظيف؛ البقاء متاحين بعد التسليم.\n' +
 'تذكير: اللغة أو السلوك المسيء قد يؤدي لرفض الخدمة.';
 
-const MODEL = 'gemini-2.5-flash'; 
+const MODEL = 'gemini-2.5-flash'; // Gemini free-tier model
 const MAX_MESSAGE_LEN = 800;
 const MAX_HISTORY_TURNS = 6;
 
 exports.handler = async function (event) {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'application/json'
-  };
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json'
+  };
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
-  }
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers, body: '' };
+  }
 
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
-  }
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
 
-  let payload;
-  try {
-    payload = JSON.parse(event.body || '{}');
-  } catch (e) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) };
-  }
+  let payload;
+  try {
+    payload = JSON.parse(event.body || '{}');
+  } catch (e) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) };
+  }
 
-  const message = String(payload.message || '').trim().slice(0, MAX_MESSAGE_LEN);
-  if (!message) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Empty message' }) };
-  }
+  const message = String(payload.message || '').trim().slice(0, MAX_MESSAGE_LEN);
+  if (!message) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Empty message' }) };
+  }
 
-  const history = Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY_TURNS) : [];
-  const safeHistory = history
-    .filter(h => h && (h.role === 'user' || h.role === 'assistant') && h.content)
-    .map(h => ({ role: h.role, content: String(h.content).slice(0, MAX_MESSAGE_LEN) }));
+  const history = Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY_TURNS) : [];
+  const safeHistory = history
+    .filter(h => h && (h.role === 'user' || h.role === 'assistant') && h.content)
+    .map(h => ({ role: h.role, content: String(h.content).slice(0, MAX_MESSAGE_LEN) }));
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error('GEMINI_API_KEY is not set in Netlify environment variables.');
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server not configured' }) };
-  }
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.error('GEMINI_API_KEY is not set in Netlify environment variables.');
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server not configured' }) };
+  }
 
-  const messages = [
-    ...safeHistory,
-    { role: 'user', content: message }
-  ];
+  const messages = [
+    { role: 'system', content: CONTRACT_CTX },
+    ...safeHistory,
+    { role: 'user', content: message }
+  ];
 
-  try {
-    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        system_instruction: CONTRACT_CTX, 
-        temperature: 0.3,
-        max_tokens: 600
-      })
-    });
+  try {
+    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        temperature: 0.3,
+        max_tokens: 600
+      })
+    });
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      console.error('Gemini API error:', resp.status, errText);
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) };
-    }
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('Gemini API error:', resp.status, errText);
+      return { statusCode: 502, headers, body: JSON.stringify({ error: 'AI service error' }) };
+    }
 
-    const data = await resp.json();
-    const reply = data?.choices?.[0]?.message?.content?.trim();
+    const data = await resp.json();
+    const reply = data?.choices?.[0]?.message?.content?.trim();
 
-    if (!reply) {
-      return { statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) };
-    }
+    if (!reply) {
+      return { statusCode: 502, headers, body: JSON.stringify({ error: 'Empty AI response' }) };
+    }
 
-    return { statusCode: 200, headers, body: JSON.stringify({ reply }) };
-  } catch (err) {
-    console.error('Function error:', err);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) };
-  }
-};
+    return { statusCode: 200, headers, body: JSON.stringify({ reply }) };
+  } catch (err) {
+    console.error('Function error:', err);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal error' }) };
+  }
+};   هل هو صحيح؟ 
